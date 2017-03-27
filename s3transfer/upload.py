@@ -11,6 +11,7 @@
 # ANY KIND, either express or implied. See the License for the specific
 # language governing permissions and limitations under the License.
 import math
+import os
 
 from botocore.compat import six
 
@@ -214,6 +215,32 @@ class UploadInputManager(object):
 
     def _get_close_callbacks(self, aggregated_progress_callbacks):
         return [callback.flush for callback in aggregated_progress_callbacks]
+
+
+class UploadFolderInputManager(UploadInputManager):
+    """Upload utility for folders"""
+    @classmethod
+    def is_compatible(cls, upload_source):
+        return isinstance(upload_source, six.string_types) and upload_source.endswith(os.path.sep)
+
+    def stores_body_in_memory(self, operation_name):
+        return False
+
+    def provide_transfer_size(self, transfer_future):
+        transfer_future.meta.provide_transfer_size(
+            self._osutil.get_file_size(
+                transfer_future.meta.call_args.fileobj))
+
+    def requires_multipart_upload(self, transfer_future, config):
+        return False
+
+    def get_put_object_body(self, transfer_future):
+        class FolderUploadBody(str):
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                pass
+        return FolderUploadBody()
 
 
 class UploadFilenameInputManager(UploadInputManager):
@@ -497,6 +524,7 @@ class UploadSubmissionTask(SubmissionTask):
             input for uploads.
         """
         upload_manager_resolver_chain = [
+            UploadFolderInputManager,
             UploadFilenameInputManager,
             UploadSeekableInputManager,
             UploadNonSeekableInputManager
